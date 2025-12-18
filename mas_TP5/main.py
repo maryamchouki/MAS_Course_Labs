@@ -8,7 +8,7 @@ Exécution:
     python main.py
 """
 
-import spade
+import spade # type: ignore
 from exercices import main
 
 if __name__ == "__main__":

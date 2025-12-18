@@ -9,11 +9,11 @@ Exécution:
     python main.py
 """
 
-import spade
+import spade # type: ignore
 import asyncio
-from spade.agent import Agent
-from spade.behaviour import CyclicBehaviour, OneShotBehaviour
-from spade.message import Message
+from spade.agent import Agent # type: ignore
+from spade.behaviour import CyclicBehaviour, OneShotBehaviour # type: ignore
+from spade.message import Message # type: ignore
 
 # Pour éviter les warning logs
 import logging
@@ -59,6 +59,7 @@ class LivreurAgent(Agent):
                 if performative == "cfp":
                     # TODO: Extraire la destination du msg.body
                     # Format: "livraison:(3,4)" → destination = (3, 4)
+
                     
                     # TODO: Si disponible:
                     #   - Calculer le coût (distance * tarif)
@@ -66,19 +67,46 @@ class LivreurAgent(Agent):
                     # Sinon:
                     #   - Envoyer un message "refuse"
                     
-                    pass  # Remplacer par votre code
+                    #pass 
+                    # Extraire destination : "livraison:(3, 4)"
+                    destination = eval(msg.body.split(":")[1])
+
+                    if self.agent.disponible:
+                        distance = self.agent.calculer_distance(destination)
+                        cout = distance * self.agent.tarif
+
+                        reply = msg.make_reply()
+                        reply.set_metadata("performative", "propose")
+                        reply.body = f"cout:{cout}"
+
+                        await self.send(reply)
+                        print(f"📦 {self.agent.jid} propose coût = {cout}")
+
+                    else:
+                        reply = msg.make_reply()
+                        reply.set_metadata("performative", "refuse")
+                        await self.send(reply)
+
+                        print(f"❌ {self.agent.jid} indisponible")
                 
                 elif performative == "accept-proposal":
                     # TODO: Afficher "Livraison acceptée!"
                     # TODO: Envoyer un message "inform" avec body = "done"
                     
-                    pass  # Remplacer par votre code
+                    #pass  # Remplacer par votre code
+                     print(f"✅ Livraison acceptée par {self.agent.jid}")
+
+                     reply = msg.make_reply()
+                     reply.set_metadata("performative", "inform")
+                     reply.body = "done"
+
+                     await self.send(reply)
                 
                 elif performative == "reject-proposal":
                     # TODO: Afficher "Offre refusée"
+                    #pass  # Remplacer par votre code
+                    print(f"❌ Offre refusée pour {self.agent.jid}")
                     
-                    pass  # Remplacer par votre code
-    
     async def setup(self):
         print(f"🚚 {self.jid} démarré (tarif={self.tarif}, position={self.position})")
         self.add_behaviour(self.RecevoirCFP())
@@ -113,7 +141,12 @@ class GestionnaireAgent(Agent):
             #   - body = f"livraison:{destination}"
             #   - Envoyer le message
             
-            pass  # Remplacer par votre code
+            #pass  
+            for livreur in self.agent.livreurs_jids:
+                msg = Message(to=livreur)
+                msg.set_metadata("performative", "cfp")
+                msg.body = f"livraison:{destination}"
+                await self.send(msg)
             
             # Attendre les réponses
             await asyncio.sleep(2)
@@ -132,7 +165,15 @@ class GestionnaireAgent(Agent):
                     #       {'livreur': str(msg.sender), 'cout': cout}
                     # TODO: Afficher la proposition
                     
-                    pass  # Remplacer par votre code
+                    #pass 
+                    cout = float(msg.body.split(":")[1])
+
+                    self.agent.propositions.append({
+                        "livreur": str(msg.sender),
+                        "cout": cout
+                    })
+
+                    print(f"💰 Proposition reçue de {msg.sender} : {cout}")
                 
                 elif performative == "refuse":
                     print(f"  ❌ {msg.sender} a refusé")
@@ -159,7 +200,17 @@ class GestionnaireAgent(Agent):
             #   - Sinon: envoyer "reject-proposal"
             # TODO: Afficher le gagnant
             
-            pass  # Remplacer par votre code
+            #pass  
+            gagnant = min(self.agent.propositions, key=lambda p: p["cout"])
+            print(f"🏆 Gagnant : {gagnant['livreur']} avec coût {gagnant['cout']}")
+
+            for prop in self.agent.propositions:
+                msg = Message(to=prop["livreur"])
+                if prop == gagnant:
+                    msg.set_metadata("performative", "accept-proposal")
+                else:
+                    msg.set_metadata("performative", "reject-proposal")
+                await self.send(msg)
     
     async def setup(self):
         print(f"📋 {self.jid} démarré")
@@ -187,20 +238,47 @@ async def main():
     #   - "livreur_b@localhost" (tarif=1.5, position=(5,5), disponible=True)
     #   - "livreur_c@localhost" (tarif=1.0, position=(10,0), disponible=False)
     # Password: "password" pour tous
+    livreur_a = LivreurAgent("livreur_a@localhost", "password", 2.0, (0, 0), True)
+    livreur_b = LivreurAgent("livreur_b@localhost", "password", 1.5, (5, 5), True)
+    livreur_c = LivreurAgent("livreur_c@localhost", "password", 1.0, (10, 0), False)
     
     # TODO: Créer l'agent gestionnaire avec JID "gestionnaire@localhost"
     # Passer la liste des JIDs des livreurs
+    gestionnaire = GestionnaireAgent(
+        "gestionnaire@localhost",
+        "password",
+        [
+            "livreur_a@localhost",
+            "livreur_b@localhost",
+            "livreur_c@localhost"
+        ]
+    )
     
     # TODO: Démarrer tous les agents avec await agent.start()
+    await livreur_a.start()
+    await livreur_b.start()
+    await livreur_c.start()
+    await gestionnaire.start()
+
+    await asyncio.sleep(2)
+
     
     # TODO: Attendre un peu puis lancer une livraison vers (3, 4)
     # gestionnaire.lancer_livraison((3, 4))
-    
+    gestionnaire.lancer_livraison((3, 4))
+
     # TODO: Attendre la fin (await asyncio.sleep(10))
+
+    await asyncio.sleep(10)
     
     # TODO: Arrêter tous les agents avec await agent.stop()
+    await livreur_a.stop()
+    await livreur_b.stop()
+    await livreur_c.stop()
+    await gestionnaire.stop()
     
-    pass  # Remplacer par votre code
+    #pass
+
     
     print("\n" + "=" * 60)
     print("✅ SIMULATION TERMINÉE")
